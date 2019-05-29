@@ -1,5 +1,10 @@
 # Stitch Mobile Example - Todo App
 
+## Facebook OAuth Branch
+Please keep in mind you will most likely need to test this on a physical device.
+The Facebook app is required as part of the OAuth process, in order to grant
+permissions.
+
 ## Requirements
 
 - Swift >= 5
