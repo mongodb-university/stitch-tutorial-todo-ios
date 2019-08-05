@@ -12,39 +12,55 @@ import StitchCore
 import FBSDKLoginKit
 import FacebookCore
 import FacebookLogin
+import GoogleSignIn
 
-class WelcomeViewController: UIViewController {
+class WelcomeViewController: UIViewController, GIDSignInUIDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         title = "Welcome"
         // add self as observer to NotificationCenter
-        NotificationCenter.default.addObserver(self, selector: #selector(didSignIn), name: NSNotification.Name("SIGN_IN"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(didSignInWithOauth), name: NSNotification.Name("OAUTH_SIGN_IN"), object: nil)
         // Do any additional setup after loading the view.
-        
+        GIDSignIn.sharedInstance()?.uiDelegate = self
+
         if stitch.auth.isLoggedIn {
             self.navigationController?.pushViewController(TodoTableViewController(), animated: true)
         } else {
-            
+
             let anonymousButton = UIButton(frame: CGRect(x: self.view.frame.width / 2 - 150, y: 100, width: 300, height: 50))
             anonymousButton.backgroundColor = .green
             anonymousButton.setTitle("Login Anonymously", for: .normal)
             anonymousButton.addTarget(self, action: #selector(didClickAnonymousLogin), for: .touchUpInside)
-            
+
+            let googleButton = GIDSignInButton(frame: CGRect(x: self.view.frame.width / 2 - 150, y: 200, width: 300, height: 50))
 
             let fbButton = UIButton(frame: CGRect(x: self.view.frame.width / 2 - 150, y: 300, width: 300, height: 50))
             fbButton.backgroundColor = .darkGray
             fbButton.setTitle("Login with Facebook", for: .normal)
             fbButton.addTarget(self, action: #selector(didClickFacebookLogin), for: .touchUpInside)
-            
-            
+
             self.view.addSubview(anonymousButton)
+            self.view.addSubview(googleButton)
             self.view.addSubview(fbButton)
-            
+
         }
     }
-    
-    
+
+
+    @objc func didClickAnonymousLogin(_ sender: Any) {
+        stitch.auth.login(withCredential: AnonymousCredential()) { [weak self] result in
+            switch result {
+            case .failure(let e):
+                fatalError(e.localizedDescription)
+            case .success:
+                DispatchQueue.main.async {
+                    self?.navigationController?.pushViewController(TodoTableViewController(), animated: true)
+                }
+            }
+        }
+    }
+
     @objc func didClickFacebookLogin(_ sender: Any) {
         let loginManager = LoginManager()
         loginManager.logIn(permissions: [.publicProfile, .email], viewController: self) { result in
@@ -58,7 +74,7 @@ class WelcomeViewController: UIViewController {
                 stitch.auth.login(withCredential: fbCredential) { result in
                     switch result {
                     case .success:
-                        NotificationCenter.default.post(name: Notification.Name("SIGN_IN"), object: nil, userInfo: nil)
+                        NotificationCenter.default.post(name: Notification.Name("OAUTH_SIGN_IN"), object: nil, userInfo: nil)
                     case .failure(let error):
                         print("failed logging in Stitch with Facebook. error: \(error)")
                         LoginManager().logOut()
@@ -68,22 +84,14 @@ class WelcomeViewController: UIViewController {
         }
     }
 
-    
-    @objc func didClickAnonymousLogin(_ sender: Any) {
-        stitch.auth.login(withCredential: AnonymousCredential()) { result in
-            switch result {
-            case .failure(let e):
-                fatalError(e.localizedDescription)
-            case .success:
-                NotificationCenter.default.post(name: Notification.Name("SIGN_IN"), object: nil, userInfo: nil)
-
-            }
-        }
-    }
-    
-    @objc func didSignIn(_sender: Any) {
-        DispatchQueue.main.sync {
+    @objc func didSignInWithOauth() {
+        DispatchQueue.main.async {
             self.navigationController?.pushViewController(TodoTableViewController(), animated: true)
         }
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
 }

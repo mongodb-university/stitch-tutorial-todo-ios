@@ -8,6 +8,7 @@ target 'Todo' do
   pod 'StitchSDK', '= 6.0.1'
   pod 'FacebookCore'
   pod 'FacebookLogin'
+  pod 'GoogleSignIn'
 
   # Pods for Todo
 end
