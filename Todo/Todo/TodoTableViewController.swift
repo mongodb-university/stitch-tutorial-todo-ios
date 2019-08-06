@@ -2,9 +2,11 @@ import MongoSwift
 import UIKit
 import FBSDKLoginKit
 import GoogleSignIn
+import StitchRemoteMongoDBService
 
-class TodoTableViewController:
-    UIViewController, UITableViewDataSource, UITableViewDelegate {
+class TodoTableViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, ChangeStreamDelegate {
+    typealias DocumentT = TodoItem // Declare Document type for ChangeStreamDelegate
+
     let tableView = UITableView() // Create our tableview
 
     private var userId: String? {
@@ -12,12 +14,14 @@ class TodoTableViewController:
     }
 
     fileprivate var todoItems = [TodoItem]() // our table view data source
+    var changeStreamSession: ChangeStreamSession<TodoItem>? // our watch change stream session
 
     override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nil, bundle: nil)
         // check to make sure a user is logged in
         // if they are, load the user's todo items and refresh the tableview
         if stitch.auth.isLoggedIn {
+            addWatchToCollection()
             itemsCollection.find(["owner_id": self.userId!]).toArray { result in
                 switch result {
                 case .success(let todos):
@@ -48,12 +52,12 @@ class TodoTableViewController:
         self.tableView.frame = self.view.frame
 
         let addButton = UIBarButtonItem(barButtonSystemItem: .add,
-                                        target: self,
-                                        action: #selector(self.addTodoItem(_:)))
+            target: self,
+            action: #selector(self.addTodoItem(_:)))
         let logoutButton = UIBarButtonItem(title: "Logout",
-                                           style: .plain,
-                                           target: self,
-                                           action: #selector(self.logout(_:)))
+            style: .plain,
+            target: self,
+            action: #selector(self.logout(_:)))
 
         navigationItem.leftBarButtonItem = addButton
         navigationItem.rightBarButtonItem = logoutButton
@@ -88,9 +92,9 @@ class TodoTableViewController:
         alertController.addAction(UIAlertAction(title: "OK", style: .default, handler: { _ in
             if let task = alertController.textFields?.first?.text {
                 let todoItem = TodoItem(id: ObjectId(),
-                                        ownerId: self.userId!,
-                                        task: task,
-                                        checked: false)
+                    ownerId: self.userId!,
+                    task: task,
+                    checked: false)
                 // optimistically add the item and reload the data
                 self.todoItems.append(todoItem)
                 self.tableView.reloadData()
@@ -114,7 +118,7 @@ class TodoTableViewController:
     }
 
     func tableView(_ tableView: UITableView,
-                   shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
         return false
     }
 
@@ -156,12 +160,46 @@ class TodoTableViewController:
     }
 
     func tableView(_ tableView: UITableView,
-                   cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TodoCell") ?? UITableViewCell(style: .default, reuseIdentifier: "TodoCell")
         cell.selectionStyle = .none
         let item = todoItems[indexPath.row]
         cell.textLabel?.text = item.task
         cell.accessoryType = item.checked ? UITableViewCell.AccessoryType.checkmark : UITableViewCell.AccessoryType.none
         return cell
+    }
+
+    // Starts watching the items collection for changes.
+    func addWatchToCollection() {
+        do {
+            NSLog("Watching changes for user \(userId!)");
+            changeStreamSession = try itemsCollection.watch(matchFilter: ["fullDocument.owner_id": userId!] as Document, delegate: self);
+        } catch {
+            NSLog("Stitch error: \(error)");
+        }
+    }
+
+    // Implementation of the ChangeStreamDelegate protocol. Called when the matchFilter matches the change event.
+    func didReceive(event: ChangeEvent<DocumentT>) {
+        let item = event.fullDocument!;
+        NSLog("Item refreshed: \(item)");
+        DispatchQueue.main.async { [weak self] in
+            if let index = self?.todoItems.firstIndex(where: {$0.id == item.id}) {
+                self?.todoItems[index] = item
+                self?.tableView.reloadData()
+            }
+        }
+    }
+
+    // Implementation of the ChangeStreamDelegate protocol
+    func didReceive(streamError: Error) {
+    }
+
+    // Implementation of the ChangeStreamDelegate protocol
+    func didOpen() {
+    }
+
+    // Implementation of the ChangeStreamDelegate protocol
+    func didClose() {
     }
 }
