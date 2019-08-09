@@ -173,7 +173,7 @@ class TodoTableViewController: UIViewController, UITableViewDataSource, UITableV
     func addWatchToCollection() {
         do {
             NSLog("Watching changes for user \(userId!)");
-            changeStreamSession = try itemsCollection.watch(matchFilter: ["fullDocument.owner_id": userId!] as Document, delegate: self);
+            changeStreamSession = try itemsCollection.watch(delegate: self);
         } catch {
             NSLog("Stitch error: \(error)");
         }
@@ -181,11 +181,31 @@ class TodoTableViewController: UIViewController, UITableViewDataSource, UITableV
 
     // Implementation of the ChangeStreamDelegate protocol. Called when the matchFilter matches the change event.
     func didReceive(event: ChangeEvent<DocumentT>) {
-        let item = event.fullDocument!;
-        NSLog("Item refreshed: \(item)");
-        DispatchQueue.main.async { [weak self] in
-            if let index = self?.todoItems.firstIndex(where: {$0.id == item.id}) {
-                self?.todoItems[index] = item
+        // Update or insert events have a fullDocument field containing the new document.
+        // Delete events do not have this field.
+        if let item = event.fullDocument {
+            NSLog("Item refreshed: \(item)");
+            DispatchQueue.main.async { [weak self] in
+                // Try to find the item in the array by id.
+                if let index = self?.todoItems.firstIndex(where: { $0.id == item.id }) {
+                    // Item was already in the list. Here we update it.
+                    self?.todoItems[index] = item
+                } else {
+                    // Item was not already in list, so it's a new item. Add it.
+                    self?.todoItems.append(item)
+                }
+                // Refresh the view.
+                self?.tableView.reloadData()
+            }
+        } else if let id = event.documentKey["_id"] as? ObjectId {
+            // We can still retrieve the id of the deleted document in the event's
+            // documentKey field.
+            NSLog("Item deleted: \(id)");
+            DispatchQueue.main.async { [weak self] in
+                // Remove the deleted item from the list.
+                self?.todoItems.removeAll { $0.id == id }
+
+                // Refresh the view.
                 self?.tableView.reloadData()
             }
         }
